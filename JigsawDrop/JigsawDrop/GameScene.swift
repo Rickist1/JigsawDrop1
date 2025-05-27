@@ -16,6 +16,10 @@ class GameScene: SKScene {
     private var gameGrid: GameGrid!
     private var currentPiece: PuzzlePiece?
     
+    // Grid configuration (can be set by difficulty selection later)
+    private var selectedRows: Int = 6 // Default
+    private var selectedColumns: Int = 6 // Default
+    
     // UI Elements
     private var scoreLabel: SKLabelNode!
     private var levelLabel: SKLabelNode!
@@ -135,31 +139,68 @@ class GameScene: SKScene {
     }
     
     private func setupGameComponents() {
-        print("🎯 DEBUG: setupGameComponents() called")
-        
-        // Create game grid
-        gameGrid = GameGrid(rows: 6, columns: 6, cellSize: 60)
-        // CENTER-BASED POSITIONING: Position grid to balance between UI elements and spawn area
-        // With anchor point (0.5, 0.5), (0,0) is now the center of the scene
-        gameGrid.position = CGPoint(x: 0, y: -50)  // Balanced position to avoid spawn area blocking progress bar
-        addChild(gameGrid)
-        print("🎯 DEBUG: Created and added gameGrid at position \(gameGrid.position)")
-        print("🎯 DEBUG: Grid positioned at x: \(gameGrid.position.x), y: \(gameGrid.position.y)")
-        print("🎯 DEBUG: Screen size: \(size)")
-        
-        // Create game manager
-        print("🎯 DEBUG: About to create GameManager")
-        gameManager = GameManager()
+        print("🎯 DEBUG: setupGameComponents() called with selectedGrid: \(self.selectedRows)x\(self.selectedColumns)")
+
+        // selectedRows and selectedColumns are now set by GameViewController before scene is presented.
+        // Remove hardcoded values:
+        // selectedRows = 8 
+        // selectedColumns = 8
+
+        // Create game manager first
+        print("🎯 DEBUG: About to create GameManager with grid: \(self.selectedRows)x\(self.selectedColumns)")
+        gameManager = GameManager(rows: self.selectedRows, columns: self.selectedColumns) // Initialize with selected size
         print("🎯 DEBUG: GameManager created: \(gameManager != nil)")
-        
-        print("🎯 DEBUG: About to set delegate")
         gameManager.delegate = self
         print("🎯 DEBUG: Delegate set. gameManager.delegate is: \(gameManager.delegate != nil ? "NOT NIL" : "NIL")")
+
+        // Calculate available space for the grid (e.g., 90% width, 60% height, adjust as needed)
+        let availableWidth = self.size.width * 0.9
+        let topMarginForUI: CGFloat = 150 // Space for score, progress, etc.
+        let bottomMarginForUI: CGFloat = 80 // Space for tab bar or controls
+        let availableHeight = self.size.height - topMarginForUI - bottomMarginForUI
+        
+        // Calculate cellSize based on available space and selected grid dimensions
+        let cellWidth = availableWidth / CGFloat(selectedColumns)
+        let cellHeight = availableHeight / CGFloat(selectedRows)
+        let calculatedCellSize = min(cellWidth, cellHeight)
+        
+        print("🎯 DEBUG: Available Width: \(availableWidth), Available Height: \(availableHeight) for grid")
+        print("🎯 DEBUG: Calculated CellSize: \(calculatedCellSize) (from cellWidth: \(cellWidth), cellHeight: \(cellHeight)) for \(self.selectedRows)x\(self.selectedColumns) grid")
+
+        // Communicate cell size to GameManager. 
+        // Grid size is already set during GameManager initialization.
+        // The setGridSize call here would be redundant and cause a double puzzle generation.
+        gameManager.setCellSize(calculatedCellSize) // This will trigger piece regeneration if necessary if cell size implies different texture needs
+
+        // Create game grid
+        gameGrid = GameGrid(rows: self.selectedRows, columns: self.selectedColumns, cellSize: calculatedCellSize)
+        
+        // Adjust gameGrid position: Center it, considering the top UI and bottom tab bar.
+        // The grid's internal content is already centered (SKNode origin is center).
+        // We want to position the center of the gameGrid node in the center of the available vertical space.
+        let gridTotalHeight = calculatedCellSize * CGFloat(selectedRows) // Total height of the grid content
+        
+        // Calculate the Y coordinate of the center of the available space for the grid.
+        // topMarginForUI is from scene top (self.size.height / 2) downwards.
+        // bottomMarginForUI is from scene bottom (-self.size.height / 2) upwards.
+        // Center of available space = ((self.size.height / 2 - topMarginForUI) + (-self.size.height / 2 + bottomMarginForUI)) / 2
+        // This simplifies to (bottomMarginForUI - topMarginForUI) / 2.
+        let centerYOfAvailableSpace = (bottomMarginForUI - topMarginForUI) / 2
+        
+        gameGrid.position = CGPoint(x: 0, y: centerYOfAvailableSpace)
+
+        addChild(gameGrid)
+        print("🎯 DEBUG: Created and added gameGrid at position \(gameGrid.position)")
+        print("🎯 DEBUG: Grid total height: \(gridTotalHeight), Target Y for grid center: \(centerYOfAvailableSpace)")
+        print("🎯 DEBUG: Screen size: \(size)")
     }
     
     private func setupUI() {
         // CENTER-BASED UI POSITIONING
         // With anchor point (0.5, 0.5), we position relative to center
+        let topEdge = self.size.height / 2
+        let leftEdge = -self.size.width / 2
+        let rightEdge = self.size.width / 2
         
         // Score label - top left with modern font
         scoreLabel = SKLabelNode(fontNamed: "SF Pro Display")
@@ -167,13 +208,10 @@ class GameScene: SKScene {
             scoreLabel = SKLabelNode(fontNamed: "Helvetica-Bold")
         }
         scoreLabel.text = "Score: 0"
-        scoreLabel.fontSize = 24
+        scoreLabel.fontSize = 22 // Adjusted for potentially less space
         scoreLabel.fontColor = .white
-        scoreLabel.position = CGPoint(x: -size.width * 0.35, y: size.height * 0.4)
+        scoreLabel.position = CGPoint(x: leftEdge + 20, y: topEdge - 40)
         scoreLabel.horizontalAlignmentMode = .left
-        
-        // Removed glow effect to prevent double text
-        
         addChild(scoreLabel)
         
         // High score label - top center with modern font
@@ -184,7 +222,7 @@ class GameScene: SKScene {
         highScoreLabel.text = "Best: \(gameManager.highScore)"
         highScoreLabel.fontSize = 16
         highScoreLabel.fontColor = .lightGray
-        highScoreLabel.position = CGPoint(x: 0, y: size.height * 0.42)
+        highScoreLabel.position = CGPoint(x: 0, y: topEdge - 30)
         highScoreLabel.horizontalAlignmentMode = .center
         highScoreLabel.name = "highScoreLabel"
         addChild(highScoreLabel)
@@ -195,33 +233,34 @@ class GameScene: SKScene {
             levelLabel = SKLabelNode(fontNamed: "Helvetica-Bold")
         }
         levelLabel.text = "Complete: 0%"
-        levelLabel.fontSize = 20
+        levelLabel.fontSize = 18 // Adjusted
         levelLabel.fontColor = .white
-        levelLabel.position = CGPoint(x: -size.width * 0.35, y: size.height * 0.35)
+        levelLabel.position = CGPoint(x: leftEdge + 20, y: topEdge - 70)
         levelLabel.horizontalAlignmentMode = .left
         addChild(levelLabel)
         
-        // Instruction label removed for cleaner look
-        
         // Control buttons
-        createControlButtons()
+        createControlButtons() // Positions relative to screen edges/center
         
         // Setup new UI elements
-        setupProgressIndicators()
-        setupPreviewWindow()
-        setupGridEnhancements()
-        setupTabSystem()
+        setupProgressIndicators() // Positions relative to screen edges/center
+        setupPreviewWindow()      // Positions relative to screen edges/center
+        setupGridEnhancements()   // Related to gameGrid, should be fine
+        setupTabSystem()          // Bottom of screen, relative
     }
     
     private func setupProgressIndicators() {
+        let topEdge = self.size.height / 2
         // Create glassmorphism progress panel
-        let progressPanel = VisualManager.shared.createGlassmorphismPanel(size: CGSize(width: 220, height: 40))
-        progressPanel.position = CGPoint(x: -size.width * 0.1, y: size.height * 0.32)
+        let panelWidth: CGFloat = min(self.size.width * 0.5, 220) // Responsive width
+        let progressPanel = VisualManager.shared.createGlassmorphismPanel(size: CGSize(width: panelWidth, height: 40))
+        // Positioned more towards center top, below high score
+        progressPanel.position = CGPoint(x: 0, y: topEdge - 65) 
         progressPanel.zPosition = 1
         addChild(progressPanel)
         
         // Progress bar background with rounded corners
-        progressBar = SKShapeNode(rectOf: CGSize(width: 200, height: 20), cornerRadius: 10)
+        progressBar = SKShapeNode(rectOf: CGSize(width: panelWidth - 20, height: 20), cornerRadius: 10)
         progressBar.fillColor = .darkGray
         progressBar.strokeColor = VisualManager.shared.getCurrentTheme().primaryColor.withAlphaComponent(0.5)
         progressBar.lineWidth = 1
@@ -231,7 +270,7 @@ class GameScene: SKScene {
         
         // Progress bar fill with gradient effect
         progressFill = SKSpriteNode(color: VisualManager.shared.getCurrentTheme().primaryColor, size: CGSize(width: 0, height: 18))
-        progressFill.position = CGPoint(x: -100, y: 0)
+        progressFill.position = CGPoint(x: -(panelWidth - 20)/2, y: 0) // Anchor left of progress bar
         progressFill.anchorPoint = CGPoint(x: 0, y: 0.5)
         progressFill.zPosition = 3
         progressBar.addChild(progressFill)
@@ -244,7 +283,7 @@ class GameScene: SKScene {
         progressPercentLabel.text = "0%"
         progressPercentLabel.fontSize = 14
         progressPercentLabel.fontColor = .white
-        progressPercentLabel.position = CGPoint(x: 0, y: -8)
+        progressPercentLabel.position = CGPoint(x: 0, y: -7) // Centered in the bar
         progressPercentLabel.horizontalAlignmentMode = .center
         progressPercentLabel.zPosition = 4
         progressBar.addChild(progressPercentLabel)
@@ -254,26 +293,23 @@ class GameScene: SKScene {
             SKAction.scale(to: 1.05, duration: 2.0),
             SKAction.scale(to: 1.0, duration: 2.0)
         ])
-        progressPanel.run(SKAction.repeatForever(pulseAction))
+        // progressPanel.run(SKAction.repeatForever(pulseAction)) // Can be distracting, make optional
     }
     
     private func createControlButtons() {
-        // CENTER-BASED BUTTON POSITIONING
-        
+        let topEdge = self.size.height / 2
+        let rightEdge = self.size.width / 2
         // PAUSE button - top right with pause symbol
-        // PAUSE button - simple label without background
         let pauseLabel = SKLabelNode(fontNamed: "Helvetica-Bold")
-        pauseLabel.text = "⏸"
-        pauseLabel.fontSize = 30
+        pauseLabel.text = "⏸" // Pause symbol
+        pauseLabel.fontSize = 28 // Slightly smaller if needed
         pauseLabel.fontColor = .white
-        pauseLabel.position = CGPoint(x: size.width * 0.35, y: size.height * 0.42)
+        pauseLabel.position = CGPoint(x: rightEdge - 30, y: topEdge - 30)
         pauseLabel.horizontalAlignmentMode = .center
         pauseLabel.verticalAlignmentMode = .center
         pauseLabel.name = "pauseButton"
-        pauseLabel.zPosition = 150  // Higher than pause overlay (100) so it's always clickable
+        pauseLabel.zPosition = 150
         addChild(pauseLabel)
-        
-        // Removed ROTATE and DROP buttons - now using tap-to-rotate and swipe-down-to-drop
     }
     
     private func createBeautifulButton(text: String, size: CGSize, position: CGPoint, color: UIColor, name: String, fontSize: CGFloat) {
@@ -579,10 +615,16 @@ class GameScene: SKScene {
     
     private func returnPieceToSpawnArea(_ piece: PuzzlePiece) {
         // Calculate spawn position using same logic as piece generation
-        let centerColumn = CGFloat(gameGrid.columns) / 2.0 - 0.5
-        let centerX = centerColumn * gameGrid.cellSize - CGFloat(gameGrid.columns) * gameGrid.cellSize / 2.0
-        let spawnY = CGFloat(gameGrid.rows) * gameGrid.cellSize / 2.0 + 80
-        let spawnPosition = CGPoint(x: centerX, y: spawnY)
+        // This function is for returning a piece, so its spawn needs to be above the grid.
+        // The gameGrid's origin (0,0) is its center.
+        // Top of the grid in gameGrid's coordinates is gameGrid.cellSize * CGFloat(gameGrid.rows) / 2.0
+        // Convert this to scene coordinates.
+        let gridTopInScene = gameGrid.convert(CGPoint(x: 0, y: gameGrid.cellSize * CGFloat(gameGrid.rows) / 2.0), to: self).y
+        let spawnY = gridTopInScene + gameGrid.cellSize // Spawn one cell size above the grid top.
+
+        // For X, let's use the center of the grid.
+        let spawnX = gameGrid.position.x 
+        let spawnPosition = CGPoint(x: spawnX, y: spawnY)
         
         // Animate piece back to spawn area
         piece.run(SKAction.move(to: spawnPosition, duration: 0.5))
@@ -631,6 +673,12 @@ class GameScene: SKScene {
     }
     
     private func updateCompletionLabel() {
+        if gameGrid == nil || gameGrid.rows == 0 || gameGrid.columns == 0 { // Ensure gameGrid is initialized
+            levelLabel.text = "Complete: 0%"
+            progressPercentLabel.text = "0%"
+            progressFill.size.width = 0
+            return
+        }
         let completionPercentage = gameGrid.getCompletionPercentage()
         let completionInt = Int(completionPercentage * 100)
         levelLabel.text = "Complete: \(completionInt)%"
@@ -639,7 +687,8 @@ class GameScene: SKScene {
         SoundManager.shared.setAdaptiveMusicIntensity(completionPercentage: Float(completionPercentage))
         
         // Update progress bar fill with smooth animation
-        let targetWidth = CGFloat(200 * completionPercentage)
+        let progressBarWidth = progressBar.frame.size.width 
+        let targetWidth = CGFloat(progressBarWidth * CGFloat(completionPercentage))
         let fillAction = SKAction.resize(toWidth: targetWidth, duration: 0.5)
         progressFill.run(fillAction)
         
@@ -2194,9 +2243,13 @@ class GameScene: SKScene {
     }
     
     private func setupPreviewWindow() {
-        // Preview window background - smaller size for single piece
-        previewWindow = SKSpriteNode(color: .black, size: CGSize(width: 70, height: 80))
-        previewWindow.position = CGPoint(x: size.width * 0.35, y: size.height * 0.32) // Moved down just a bit more
+        let topEdge = self.size.height / 2
+        let rightEdge = self.size.width / 2
+        // Preview window background - adjust size if necessary
+        let previewWindowSize = CGSize(width: max(gameGrid.cellSize * 1.2, 60), height: max(gameGrid.cellSize * 1.2 + 20, 70))
+        previewWindow = SKSpriteNode(color: .black, size: previewWindowSize)
+        // Positioned top-right, below pause button
+        previewWindow.position = CGPoint(x: rightEdge - previewWindowSize.width/2 - 15, y: topEdge - 80 - previewWindowSize.height/2) 
         previewWindow.alpha = 0.8
         previewWindow.zPosition = 1
         addChild(previewWindow)
@@ -2207,15 +2260,15 @@ class GameScene: SKScene {
             previewTitleLabel.fontName = "Helvetica-Bold"
         }
         previewTitleLabel.text = "NEXT"
-        previewTitleLabel.fontSize = 10
+        previewTitleLabel.fontSize = 12 // Slightly larger
         previewTitleLabel.fontColor = .white
-        previewTitleLabel.position = CGPoint(x: 0, y: 30)
+        previewTitleLabel.position = CGPoint(x: 0, y: previewWindowSize.height/2 - 15) // Adjusted for new size
         previewTitleLabel.horizontalAlignmentMode = .center
         previewWindow.addChild(previewTitleLabel)
         
         // Container for next pieces
         nextPiecesContainer = SKNode()
-        nextPiecesContainer.position = CGPoint(x: 0, y: 0) // Centered in preview window
+        nextPiecesContainer.position = CGPoint(x: 0, y: 0) 
         previewWindow.addChild(nextPiecesContainer)
     }
     
@@ -2280,10 +2333,12 @@ class GameScene: SKScene {
         // Show only 1 next piece (simplified)
         guard let firstPiece = nextPieces.first else { return }
         
-                let previewPiece = SKSpriteNode(texture: firstPiece.texture)
-        previewPiece.size = CGSize(width: 30, height: 30) // Slightly larger since only showing 1
-        previewPiece.position = CGPoint(x: 0, y: -10) // Centered below title
-        previewPiece.alpha = 1.0 // Full opacity for single piece
+        let previewPiece = SKSpriteNode(texture: firstPiece.texture)
+        // Scale preview piece according to cell size, but not too large
+        let previewCellSize = min(gameGrid.cellSize * 0.6, 40) // Cap max size for preview
+        previewPiece.size = CGSize(width: previewCellSize, height: previewCellSize)
+        previewPiece.position = CGPoint(x: 0, y: 0) // Centered in container
+        previewPiece.alpha = 1.0 
         nextPiecesContainer.addChild(previewPiece)
     }
     
@@ -2593,37 +2648,47 @@ extension GameScene: GameManagerDelegate {
         piece.spawnTime = CACurrentMediaTime()  // Set spawn time for scoring
         print("🎯 DEBUG: currentPiece set to: \(piece.pieceID)")
         
-        // IMPROVED POSITIONING: Position piece closer to touch area for better responsiveness
-        // Use varied spawn positions to prevent always falling in the same column
-        let targetColumn = piece.correctColumn
-        let spawnX = gameGrid.getWorldPosition(row: 0, column: targetColumn).x
+        // IMPROVED POSITIONING:
+        // Spawn piece above the grid, centered horizontally relative to the grid.
+        // The piece's texture and initial size are now determined by gameManager.setCellSize and gameGrid.cellSize.
+        // So, piece.size should be correct.
         
-        // Position much closer to the grid top - reduce gap for better touch responsiveness  
-        let spawnY = CGFloat(gameGrid.rows) * gameGrid.cellSize / 2.0 + 40 // Slightly higher spawn
+        // Determine spawn X: Use the grid's coordinate system then convert.
+        // Spawn in a column that corresponds to its correctColumn, or center if that's too complex.
+        // For simplicity, let's try to spawn it aligned with its target column if possible, or center of grid.
+        let targetColumnForSpawn = piece.correctColumn
+        let spawnXInGridCoords = gameGrid.getWorldPosition(row: 0, column: targetColumnForSpawn).x
+        let spawnXInSceneCoords = gameGrid.convert(CGPoint(x: spawnXInGridCoords, y: 0), to: self).x
+
+        // Determine spawn Y: Above the visual top of the grid.
+        // gameGrid.position.y is the center of the grid node.
+        // Top of grid node content = gameGrid.position.y + (gameGrid.rows * gameGrid.cellSize) / 2
+        let gridNodeTopY = gameGrid.position.y + (CGFloat(gameGrid.rows) * gameGrid.cellSize) / 2.0
+        let spawnY = gridNodeTopY + gameGrid.cellSize * 0.75 // Spawn about 0.75 cell size above the grid top
         
-        piece.position = CGPoint(x: spawnX, y: spawnY)
+        piece.position = CGPoint(x: spawnXInSceneCoords, y: spawnY)
+        // piece.size is already set based on the texture from GameManager
         
-        print("🧩 DEBUG: Piece spawned at column \(targetColumn) with position: \(piece.position)")
+        print("🧩 DEBUG: Piece \(piece.pieceID) spawned at SCENE position: \(piece.position) (Grid Col: \(targetColumnForSpawn))")
+        print("🎯 DEBUG: Piece size: \(piece.size), gameGrid.cellSize: \(gameGrid.cellSize)")
         
         // VISIBLE SPAWNING: Make piece immediately visible and interactive
         piece.alpha = 1.0
-        print("🎯 DEBUG: Piece spawned visibly at position: \(piece.position)")
-        
-        print("🎯 DEBUG: Improved positioning:")
-        print("🎯 DEBUG: - Target column: \(targetColumn)")
-        print("🎯 DEBUG: - Spawn X: \(spawnX)")
-        print("🎯 DEBUG: - Spawn Y: \(spawnY)")
-        print("🎯 DEBUG: - Final position: \(piece.position)")
-        print("🎯 DEBUG: - Correct position should be: row \(piece.correctRow), col \(piece.correctColumn)")
         
         // SAFETY CHECK: Verify gameGrid exists and is valid
         guard gameGrid != nil else {
-            print("🎯 DEBUG: ERROR - gameGrid is nil!")
+            print("🎯 DEBUG: ERROR - gameGrid is nil in nextPieceGenerated!")
             return
         }
         
-        // Add piece to the gameGrid with error handling
-        print("🎯 DEBUG: About to add piece to gameGrid")
+        // Add piece to the GameScene (not directly to gameGrid yet, allows for free movement before placement)
+        // Or, if pieces always spawn and fall within grid's influence area, add to gameGrid.
+        // Current logic seems to add to gameGrid, let's maintain that.
+        // Ensure piece's position is relative to its parent (gameGrid).
+        let piecePositionInGridNode = gameGrid.convert(piece.position, from: self)
+        piece.position = piecePositionInGridNode
+        
+        print("🎯 DEBUG: Adding piece \(piece.pieceID) to gameGrid at grid-local position: \(piece.position)")
         gameGrid.addChild(piece)
         print("🎯 DEBUG: Successfully added piece to gameGrid, children count: \(gameGrid.children.count)")
         
