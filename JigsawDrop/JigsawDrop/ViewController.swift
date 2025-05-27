@@ -11,10 +11,14 @@ import GameplayKit
 
 class GameViewController: UIViewController {
 
+    // Properties to hold the selected grid size, with defaults
+    var selectedRows: Int = 6
+    var selectedColumns: Int = 6
+
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        print("🎯 DEBUG: GameViewController.viewDidLoad() called!")
+        print("🎯 DEBUG: GameViewController.viewDidLoad() called with selectedGrid: \(selectedRows)x\(selectedColumns)")
         print("🎯 DEBUG: View type: \(type(of: self.view))")
         
         // Get the SKView
@@ -30,7 +34,11 @@ class GameViewController: UIViewController {
         scene.scaleMode = .aspectFit  // More predictable scaling
         scene.size = skView.bounds.size
         
-        print("🎯 DEBUG: Created GameScene with size: \(scene.size)")
+        // Pass the selected grid dimensions to the scene
+        scene.selectedRows = self.selectedRows
+        scene.selectedColumns = self.selectedColumns
+        
+        print("🎯 DEBUG: Created GameScene with size: \(scene.size) and grid: \(scene.selectedRows)x\(scene.selectedColumns)")
         
         // Present the scene
         skView.presentScene(scene)

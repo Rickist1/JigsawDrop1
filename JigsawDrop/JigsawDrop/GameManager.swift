@@ -20,8 +20,9 @@ protocol GameManagerDelegate: AnyObject {
 class GameManager {
     weak var delegate: GameManagerDelegate?
     
-    private let gridRows = 6
-    private let gridColumns = 6
+    private var gridRows: Int
+    private var gridColumns: Int
+    private var currentCellSize: CGFloat = 60.0 // Default, will be updated by GameScene
     private var puzzlePieces: [[PuzzlePiece]] = []
     private var availablePieces: [PuzzlePiece] = []
     private var currentPieceIndex = 0
@@ -38,6 +39,18 @@ class GameManager {
         }
     }
     
+    public func setCellSize(_ cellSize: CGFloat) {
+        self.currentCellSize = cellSize
+        // If pieces are already generated with a different cell size, they might need to be regenerated.
+        // For now, assume this is called before piece generation or when a full reset is acceptable.
+        if gameActive || puzzlePieces.isEmpty == false { // Check if puzzle has been generated
+             print("🧩 Cell size set to \(cellSize). Regenerating puzzle with new cell size.")
+             generateJigsawPuzzle() // Regenerate pieces with the new cell size
+        } else {
+            print("🧩 Cell size set to \(cellSize).")
+        }
+    }
+    
     var highScore: Int {
         get {
             return UserDefaults.standard.integer(forKey: "JigsawDropHighScore")
@@ -47,10 +60,27 @@ class GameManager {
         }
     }
     
-    init() {
-        print("🧩 JigsawPuzzle GameManager.init() called")
+    init(rows: Int = 6, columns: Int = 6) {
+        self.gridRows = rows
+        self.gridColumns = columns
+        print("🧩 JigsawPuzzle GameManager.init() called with grid size: \(gridRows)x\(gridColumns)")
         generateJigsawPuzzle()
         print("🧩 Generated \(puzzlePieces.count) rows x \(puzzlePieces.first?.count ?? 0) columns of puzzle pieces")
+    }
+    
+    public func setGridSize(rows: Int, columns: Int) {
+        // Ensure grid size is set before puzzle generation, ideally only once.
+        // Consider adding checks if game is active.
+        if !gameActive {
+            self.gridRows = rows
+            self.gridColumns = columns
+            print("🧩 Grid size set to: \(gridRows)x\(gridColumns)")
+            // Regenerate puzzle with new dimensions
+            generateJigsawPuzzle()
+            print("🧩 Regenerated \(puzzlePieces.count) rows x \(puzzlePieces.first?.count ?? 0) columns of puzzle pieces")
+        } else {
+            print("⚠️ Warning: Cannot change grid size while game is active.")
+        }
     }
     
     func startGame() {
@@ -129,7 +159,7 @@ class GameManager {
     }
     
     private func createPieceTexture(for row: Int, column: Int, shape: PieceShape) -> SKTexture {
-        let size = CGSize(width: 60, height: 60)
+        let size = CGSize(width: self.currentCellSize, height: self.currentCellSize)
         
         // Create a unique color for each piece based on position
         let hue = CGFloat(row * gridColumns + column) / CGFloat(gridRows * gridColumns)

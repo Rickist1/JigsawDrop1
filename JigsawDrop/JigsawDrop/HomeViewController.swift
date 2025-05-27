@@ -7,14 +7,28 @@ class HomeViewController: UIViewController {
     private let containerView = GlassmorphicCard()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
-    private let playButton = AnimatedGradientButton()
+    // private let playButton = AnimatedGradientButton() // Will be replaced by difficulty buttons
     private let settingsButton = AnimatedGradientButton()
     private let statsButton = AnimatedGradientButton()
     private let aboutButton = AnimatedGradientButton()
     private let floatingPuzzlePieces: [UIImageView] = (0..<5).map { _ in UIImageView() }
     
+    // Difficulty Levels
+    struct Difficulty {
+        let name: String
+        let rows: Int
+        let columns: Int
+        let gradientColors: [UIColor]
+    }
+
+    private var difficulties: [Difficulty] = []
+    private var difficultyButtons: [AnimatedGradientButton] = []
+    private var selectedDifficultyRows: Int = 6 // Default
+    private var selectedDifficultyColumns: Int = 6 // Default
+    
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupDifficulties()
         setupUI()
         setupConstraints()
         setupActions()
@@ -88,9 +102,15 @@ class HomeViewController: UIViewController {
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
         
         // Play Button
-        playButton.setTitle("🎮 Play Game", for: .normal)
-        playButton.gradientColors = [ThemeManager.Colors.primaryGradientStart, ThemeManager.Colors.primaryGradientEnd]
-        playButton.translatesAutoresizingMaskIntoConstraints = false
+        // Create difficulty buttons
+        for (index, difficulty) in difficulties.enumerated() {
+            let button = AnimatedGradientButton()
+            button.setTitle(difficulty.name, for: .normal)
+            button.gradientColors = difficulty.gradientColors
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.tag = index // Store index for identifying the button
+            difficultyButtons.append(button)
+        }
         
         // Settings Button
         settingsButton.setTitle("⚙️ Settings", for: .normal)
@@ -114,7 +134,8 @@ class HomeViewController: UIViewController {
         view.addSubview(containerView)
         containerView.addSubview(titleLabel)
         containerView.addSubview(subtitleLabel)
-        containerView.addSubview(playButton)
+        // Add difficulty buttons dynamically
+        difficultyButtons.forEach { containerView.addSubview($0) }
         containerView.addSubview(settingsButton)
         containerView.addSubview(statsButton)
         containerView.addSubview(aboutButton)
@@ -162,15 +183,23 @@ class HomeViewController: UIViewController {
             subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 16),
             subtitleLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 20),
             subtitleLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -20),
-            
-            // Play Button
-            playButton.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 50),
-            playButton.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 40),
-            playButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -40),
-            playButton.heightAnchor.constraint(equalToConstant: 56),
-            
+        ])
+
+        // Dynamic constraints for difficulty buttons and subsequent buttons
+        var previousButton: UIView = subtitleLabel
+        for (index, button) in difficultyButtons.enumerated() {
+            NSLayoutConstraint.activate([
+                button.topAnchor.constraint(equalTo: previousButton == subtitleLabel ? subtitleLabel.bottomAnchor : previousButton.bottomAnchor, constant: index == 0 ? 50 : 16),
+                button.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 40),
+                button.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -40),
+                button.heightAnchor.constraint(equalToConstant: 56)
+            ])
+            previousButton = button
+        }
+        
+        NSLayoutConstraint.activate([
             // Settings Button
-            settingsButton.topAnchor.constraint(equalTo: playButton.bottomAnchor, constant: 16),
+            settingsButton.topAnchor.constraint(equalTo: previousButton.bottomAnchor, constant: 16),
             settingsButton.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 40),
             settingsButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -40),
             settingsButton.heightAnchor.constraint(equalToConstant: 56),
@@ -208,24 +237,64 @@ class HomeViewController: UIViewController {
     
     // MARK: - Actions
     private func setupActions() {
-        playButton.addTarget(self, action: #selector(playButtonTapped), for: .touchUpInside)
+        // playButton.addTarget(self, action: #selector(playButtonTapped), for: .touchUpInside) // Old play button
+        difficultyButtons.forEach { button in
+            button.addTarget(self, action: #selector(difficultyButtonTapped(_:)), for: .touchUpInside)
+        }
         settingsButton.addTarget(self, action: #selector(settingsButtonTapped), for: .touchUpInside)
         statsButton.addTarget(self, action: #selector(statsButtonTapped), for: .touchUpInside)
         aboutButton.addTarget(self, action: #selector(aboutButtonTapped), for: .touchUpInside)
     }
-    
-    @objc private func playButtonTapped() {
+
+    private func setupDifficulties() {
+        difficulties = [
+            Difficulty(name: "Easy (4x4)", rows: 4, columns: 4, gradientColors: [ThemeManager.Colors.successGradientStart, ThemeManager.Colors.successGradientEnd]),
+            Difficulty(name: "Medium (6x6)", rows: 6, columns: 6, gradientColors: [ThemeManager.Colors.primaryGradientStart, ThemeManager.Colors.primaryGradientEnd]),
+            Difficulty(name: "Hard (8x8)", rows: 8, columns: 8, gradientColors: [ThemeManager.Colors.warningGradientStart, ThemeManager.Colors.warningGradientEnd]),
+            Difficulty(name: "Very Hard (10x10)", rows: 10, columns: 10, gradientColors: [ThemeManager.Colors.errorGradientStart, ThemeManager.Colors.errorGradientEnd])
+        ]
+    }
+
+    @objc private func difficultyButtonTapped(_ sender: AnimatedGradientButton) {
+        guard let index = difficultyButtons.firstIndex(of: sender) else { return }
+        let selectedDifficulty = difficulties[index]
+        
+        self.selectedDifficultyRows = selectedDifficulty.rows
+        self.selectedDifficultyColumns = selectedDifficulty.columns
+
         // Haptic feedback
         let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
         impactFeedback.impactOccurred()
         
+        // Access GameViewController and set properties
+        if let tabBarVC = self.tabBarController,
+           let viewControllers = tabBarVC.viewControllers, viewControllers.count > 1,
+           let gameNavVC = viewControllers[1] as? UINavigationController, // Assuming GameVC is embedded in a NavVC at tab index 1
+           let gameVC = gameNavVC.topViewController as? GameViewController {
+            
+            gameVC.selectedRows = selectedDifficulty.rows
+            gameVC.selectedColumns = selectedDifficulty.columns
+            print("🎮 Difficulty selected: \(selectedDifficulty.name), passing \(gameVC.selectedRows)x\(gameVC.selectedColumns) to GameViewController")
+        } else if let tabBarVC = self.tabBarController, // Fallback if GameVC is not in a NavVC
+                  let viewControllers = tabBarVC.viewControllers, viewControllers.count > 1,
+                  let gameVC = viewControllers[1] as? GameViewController {
+            gameVC.selectedRows = selectedDifficulty.rows
+            gameVC.selectedColumns = selectedDifficulty.columns
+            print("🎮 Difficulty selected: \(selectedDifficulty.name), passing \(gameVC.selectedRows)x\(gameVC.selectedColumns) to GameViewController (no NavVC)")
+        } else {
+            print("🚨 Error: Could not find GameViewController to pass difficulty settings.")
+            // As a fallback, could use UserDefaults here, but ideally the VC reference works.
+            // For now, we'll proceed hoping GameViewController gets these values.
+            // If not, it will use its defaults.
+        }
+
         // Switch to game tab with animation
         UIView.animate(withDuration: 0.3) {
             self.containerView.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
             self.containerView.alpha = 0.8
         } completion: { _ in
             if let tabBarController = self.tabBarController {
-                tabBarController.selectedIndex = 1 // Game tab
+                tabBarController.selectedIndex = 1 // Game tab (assuming index 1)
             }
             self.containerView.transform = .identity
             self.containerView.alpha = 1
